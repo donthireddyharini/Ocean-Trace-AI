@@ -123,6 +123,15 @@ def test_model_status_endpoint():
     assert "model_name" in data
     assert "checkpoint_loaded" in data
     assert "model_status" in data
+    assert data["model_status"] in [
+        "checkpoint_pending_training",
+        "checkpoint_ready",
+        "model_loading",
+        "model_ready",
+        "inference_service_unavailable",
+        "model_load_failed",
+    ]
+    assert data["storage_architecture"] in ["none", "local_filesystem", "remote_microservice"]
     assert data["num_classes"] == 2
     assert "classes" in data
     # Check alias endpoint

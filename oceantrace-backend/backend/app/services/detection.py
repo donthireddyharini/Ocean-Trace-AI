@@ -377,27 +377,49 @@ class SegFormerOilSpillDetector(OilSpillDetector):
         }
 
     def get_status(self) -> dict:
-        is_remote = bool(self._inference_url)
-        is_local_loaded = self._pytorch_model is not None and getattr(self._pytorch_model, "is_fine_tuned", False)
-        is_operational = is_remote or is_local_loaded
-
         storage_type = "none"
         location = None
-        if is_remote:
+        model_status_value = "checkpoint_pending_training"
+        checkpoint_loaded_flag = False
+
+        if self._inference_url:
             storage_type = "remote_microservice"
             location = self._inference_url
-        elif is_local_loaded:
+            # Test remote microservice connectivity
+            try:
+                import requests
+                status_url = self._inference_url.replace("/predict", "/model/status")
+                resp = requests.get(status_url, timeout=3.0)
+                if resp.status_code == 200:
+                    r_json = resp.json()
+                    model_status_value = r_json.get("model_status", "model_ready")
+                    checkpoint_loaded_flag = (model_status_value == "model_ready")
+                else:
+                    model_status_value = "inference_service_unavailable"
+            except Exception:
+                model_status_value = "inference_service_unavailable"
+        elif self._pytorch_model is not None and getattr(self._pytorch_model, "is_fine_tuned", False):
             storage_type = "local_filesystem"
             location = self._checkpoint_path
+            model_status_value = "model_ready"
+            checkpoint_loaded_flag = True
+        elif self._checkpoint_path and os.path.isfile(self._checkpoint_path):
+            storage_type = "local_filesystem"
+            location = self._checkpoint_path
+            model_status_value = "checkpoint_ready"
+        else:
+            storage_type = "none"
+            location = None
+            model_status_value = "checkpoint_pending_training"
 
         return {
             "model_name": "SegFormer-B2 (nvidia/mit-b2)",
             "architecture": "Hierarchical Mix Transformer (MiT-B2) + All-MLP Decoder",
             "task": "Binary Semantic Segmentation",
-            "checkpoint_loaded": is_operational,
+            "checkpoint_loaded": checkpoint_loaded_flag,
             "checkpoint_path": location,
             "storage_architecture": storage_type,
-            "model_status": "operational" if is_operational else "checkpoint_pending_training",
+            "model_status": model_status_value,
             "classes": {
                 0: "Background / Sea",
                 1: "Oil Spill"
@@ -407,8 +429,8 @@ class SegFormerOilSpillDetector(OilSpillDetector):
             "dataset": "Refined Deep-SAR Oil Spill (SOS)",
             "notice": (
                 "Production PyTorch weights active and operational."
-                if is_operational else
-                "Checkpoint pending training. Execute notebooks/oil_spill_segformer_training.ipynb on Kaggle GPU to produce best_oilspill_segformer.pth."
+                if checkpoint_loaded_flag else
+                f"Model status: {model_status_value}. Execute notebooks/oil_spill_segformer_training.ipynb on Kaggle GPU to produce best_oilspill_segformer.pth."
             )
         }
 
