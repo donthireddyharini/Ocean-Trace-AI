@@ -11349,8 +11349,8 @@ function renderSettings() {
     <div class="panel-head"><h3>FastAPI Backend Integration</h3><span class="badge primary">CONFIG</span></div>
     <div class="panel-body">
       <p class="small" style="margin-bottom:14px;">Optionally connect to the FastAPI backend (<code>uvicorn app.main:app --port 8000</code>) for vectorised numpy scoring of large fleets.</p>
-      <div class="field-wrap"><label class="field">API Base URL</label><input type="text" id="apiUrl" value="http://localhost:8000"></div>
-      <div class="field-wrap"><label class="field">JWT Secret Token</label><input type="text" id="apiToken" placeholder="Bearer token (optional)"></div>
+      <div class="field-wrap"><label class="field">API Base URL</label><input type="text" id="apiUrl" value="${localStorage.getItem('oceantrace_api_url') || (window.location.origin.includes('localhost') ? 'http://localhost:8000' : window.location.origin)}"></div>
+      <div class="field-wrap"><label class="field">JWT Secret Token</label><input type="text" id="apiToken" value="${localStorage.getItem('oceantrace_api_token') || ''}" placeholder="Bearer token (optional)"></div>
       <div style="display:flex; gap:10px; align-items:center;">
         <button class="btn primary" onclick="testBackendConn()">Test &amp; Connect API</button>
         <span class="small mono" id="apiStatusText" style="color:var(--emerald);"></span>
@@ -11421,12 +11421,15 @@ function syncAllToSupabaseNow() {
 
 function testBackendConn() {
   const url = document.getElementById('apiUrl').value.trim();
+  const token = document.getElementById('apiToken') ? document.getElementById('apiToken').value.trim() : '';
   const res = document.getElementById('apiStatusText');
   res.textContent = "Testing...";
-  fetch(url + '/api/health', { signal: AbortSignal.timeout(2000) })
+  fetch(url + '/api/health', { signal: AbortSignal.timeout(4000) })
     .then(r => r.json())
     .then(d => {
-      res.textContent = "✓ Connected: " + d.service;
+      localStorage.setItem('oceantrace_api_url', url);
+      if(token) localStorage.setItem('oceantrace_api_token', token);
+      res.textContent = "✓ Connected: " + (d.service || "FastAPI API");
       toast("Backend Connected", "FastAPI service active", "ok");
     })
     .catch(() => {

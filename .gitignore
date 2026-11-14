@@ -42,3 +42,5 @@ build/
 .pytest_cache/
 .ipynb_checkpoints/
 .vercel/
+
+.vercel
