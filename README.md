@@ -18,7 +18,7 @@
 
 | Component | Target URL | Description |
 |---|---|---|
-| **Web Dashboard** | `http://localhost:8080/` | Full Tactical Cyber-Maritime C4ISR Command Center |
+| **Web Dashboard** | `[(https://ocean-trace-ai-eight.vercel.app/)` | Full Tactical Cyber-Maritime C4ISR Command Center |
 | **Interactive Alternate** | `http://localhost:8080/oceantrace-ai.html` | Direct standalone frontend |
 | **FastAPI REST API** | `http://localhost:8000` | Operational Python REST & ML backend |
 | **Swagger UI Docs** | `http://localhost:8000/docs` | Interactive API documentation |
