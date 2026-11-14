@@ -5,7 +5,10 @@ NOTE: Geographic area calculations require real GeoTIFF metadata.
 When georeferencing is unavailable, pixel-based measurements are returned
 and geographic measurements are marked as unavailable.
 """
-import cv2
+try:
+    import cv2
+except ImportError:
+    cv2 = None
 import numpy as np
 from PIL import Image
 import io
@@ -90,20 +93,24 @@ class SpillCharacterizer:
         SAR: Oil spill = dark pixels (dampened backscatter below median)
         Optical: Oil spill = dark brownish region below median luminance
         """
-        # Adaptive thresholding based on image statistics
-        blur = cv2.GaussianBlur(gray_array, (5, 5), 0)
-        median_val = np.median(blur)
+        if cv2 is not None:
+            # Adaptive thresholding based on image statistics
+            blur = cv2.GaussianBlur(gray_array, (5, 5), 0)
+            median_val = np.median(blur)
 
-        # SAR: backscatter dampening detection
-        threshold = max(median_val * 0.75, median_val - 25.0)
-        dark_mask = (blur < threshold).astype(np.uint8)
+            # SAR: backscatter dampening detection
+            threshold = max(median_val * 0.75, median_val - 25.0)
+            dark_mask = (blur < threshold).astype(np.uint8)
 
-        # Morphological cleanup
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
-        cleaned = cv2.morphologyEx(dark_mask, cv2.MORPH_OPEN, kernel)
-        cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, kernel)
-
-        return cleaned.astype(bool)
+            # Morphological cleanup
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+            cleaned = cv2.morphologyEx(dark_mask, cv2.MORPH_OPEN, kernel)
+            cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, kernel)
+            return cleaned.astype(bool)
+        else:
+            median_val = np.median(gray_array)
+            threshold = max(median_val * 0.75, median_val - 25.0)
+            return (gray_array < threshold)
 
     def _compute_geometry(self, mask: np.ndarray, shape: tuple,
                           spatial_res: Optional[float],
@@ -116,28 +123,42 @@ class SpillCharacterizer:
         # Pixel area
         pixel_area = int(mask.sum())
 
-        # Contours for perimeter and shape
-        contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
+        if cv2 is not None:
+            # Contours for perimeter and shape
+            contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not contours:
+                main_contour = None
+                perimeter_px = 0.0
+            else:
+                main_contour = max(contours, key=cv2.contourArea)
+                perimeter_px = float(cv2.arcLength(main_contour, True))
+
+            # Centroid using moments
+            M = cv2.moments(mask_uint8)
+            if M['m00'] > 0:
+                cx = M['m10'] / M['m00']
+                cy = M['m01'] / M['m00']
+            else:
+                cx, cy = w / 2, h / 2
+
+            # Bounding box
+            if main_contour is not None:
+                bx, by, bw, bh = cv2.boundingRect(main_contour)
+            else:
+                bx, by, bw, bh = 0, 0, w, h
+        else:
+            # Pure numpy fallback
+            y_idxs, x_idxs = np.where(mask)
+            if len(x_idxs) > 0:
+                cx, cy = float(np.mean(x_idxs)), float(np.mean(y_idxs))
+                bx, by = int(np.min(x_idxs)), int(np.min(y_idxs))
+                bw, bh = int(np.max(x_idxs) - bx + 1), int(np.max(y_idxs) - by + 1)
+                perimeter_px = float(2 * (bw + bh))
+            else:
+                cx, cy = w / 2, h / 2
+                bx, by, bw, bh = 0, 0, w, h
+                perimeter_px = 0.0
             main_contour = None
-            perimeter_px = 0.0
-        else:
-            main_contour = max(contours, key=cv2.contourArea)
-            perimeter_px = float(cv2.arcLength(main_contour, True))
-
-        # Centroid using moments
-        M = cv2.moments(mask_uint8)
-        if M['m00'] > 0:
-            cx = M['m10'] / M['m00']
-            cy = M['m01'] / M['m00']
-        else:
-            cx, cy = w / 2, h / 2
-
-        # Bounding box
-        if main_contour is not None:
-            bx, by, bw, bh = cv2.boundingRect(main_contour)
-        else:
-            bx, by, bw, bh = 0, 0, w, h
 
         # Shape descriptors
         aspect_ratio = float(bw / max(bh, 1))
