@@ -291,6 +291,12 @@ async def predict(
         thin_area = round(area_km2 * (1.0 - emulsion_ratio), 2)
         vol_m3 = round((thick_area * 200.0) + (thin_area * 1.5), 1)
         vol_tonnes = round(vol_m3 * 0.88, 1)
+
+        # Generate base64 binary mask PNG
+        mask_img = Image.fromarray((pred_mask * 255).astype(np.uint8), mode="L")
+        mask_buf = io.BytesIO()
+        mask_img.save(mask_buf, format="PNG")
+        mask_b64 = base64.b64encode(mask_buf.getvalue()).decode("ascii")
     else:
         # Fallback when model is loading / unavailable
         confidence = 91.5
@@ -305,6 +311,7 @@ async def predict(
         perimeter_km = 8.68
         cx, cy = round(orig_w / 2.0, 1), round(orig_h / 2.0, 1)
         bx, by, bw, bh = int(orig_w * 0.25), int(orig_h * 0.25), int(orig_w * 0.5), int(orig_h * 0.5)
+        mask_b64 = None
 
     duration_ms = round((time.perf_counter() - t0) * 1000.0, 1)
 
@@ -328,6 +335,7 @@ async def predict(
         "orientation_deg": 65,
         "centroid_px": {"x": cx, "y": cy},
         "bbox_px": {"x": bx, "y": by, "w": bw, "h": bh},
+        "mask_base64": mask_b64,
         "look_alike_rejection_score": 91.4,
         "classes": [
             {"name": "Oil Spill", "code": 1, "color": "#dc2626"},
