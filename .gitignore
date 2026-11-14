@@ -25,11 +25,21 @@ Desktop.ini
 # Large data directories (never commit raw/processed data)
 data/raw/
 data/processed/
+data/uploads/
 
-# Model checkpoints
-artifacts/checkpoints/*.pth
-artifacts/checkpoints/*.pt
-artifacts/checkpoints/*.ckpt
+# Model checkpoints & large training outputs
+*.pth
+*.pt
+*.bin
+*.ckpt
+artifacts/checkpoints/
+oceantrace_artifacts/
+oceantrace_artifacts.zip
+scratch/
+
+# Secrets & credentials
+kaggle.json
+.env*
 
 # Databases
 *.db

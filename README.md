@@ -7,7 +7,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI%200.115-009688.svg)](https://fastapi.tiangolo.com)
 [![PyTorch](https://img.shields.io/badge/Deep%20Learning-PyTorch%20%2B%20SegFormer--B2-EE4C2C.svg)](https://pytorch.org/)
-[![Tests](https://img.shields.io/badge/Tests-58%20Passed%20(100%25)-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-67%20Passed%20(100%25)-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)]()
 
 > **OceanTrace AI** is an end-to-end maritime intelligence platform that detects oil spills from Sentinel-1 SAR and optical satellite imagery, reconstructs the probable spill origin using ocean currents and wind hindcasts, and correlates historical AIS trajectories using a vectorised attribution engine to identify suspect vessels with transparent, explainable evidence.
@@ -65,9 +65,11 @@
 
 ### 1. Vision Transformer Satellite Spill Detection (SegFormer-B2)
 - Architecture: Hierarchical Mix Transformer (`nvidia/mit-b2`) encoder with All-MLP lightweight decoder.
-- Multi-class output: **Clean Sea (0)**, **Heavy Emulsion Core (1)**, **Thin Rainbow Sheen (2)**, **Look-Alike Boundary (3)**, **Ship Scatterer (4)**.
+- Target Output Classes: **Class 0: Background / Sea**, **Class 1: Oil Spill** (Binary semantic segmentation).
+- Trained on **Refined Deep-SAR Oil Spill (SOS)** dataset (6,455 train, 1,615 val pairs).
 - Volumetric estimation using **Bonn Agreement** oil appearance codes (200 µm emulsion vs 1.5 µm iridescent sheen).
 - Dual-modality support: Automatic detection of **Sentinel-1 SAR** (grayscale backscatter dampening) vs **Optical Satellite** (RGB multi-spectral variance).
+- Operational Model Status: Query `GET /api/model/status` to inspect whether production PyTorch weights are loaded.
 
 ### 2. OpenCV Real Spill Geometry Characterization
 - Computes exact pixel area, perimeter, centroid coordinates, and bounding box.

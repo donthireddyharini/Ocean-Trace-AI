@@ -6,11 +6,12 @@
 |---|---|
 | **Model name** | OceanTrace-SegFormer-B2 |
 | **Architecture** | SegFormer-B2 (Mix Transformer encoder + lightweight MLP decoder) |
-| **Task** | Semantic segmentation of SAR satellite imagery |
+| **Task** | Semantic segmentation of SAR satellite imagery (Binary: Sea vs Oil Spill) |
 | **Input** | 512 × 512 × 3 (SAR replicated to 3 channels, or RGB) |
-| **Output** | 512 × 512 segmentation map, 5 classes |
+| **Output** | 512 × 512 segmentation map, 2 classes |
 | **Framework** | PyTorch + HuggingFace Transformers |
-| **Status** | 🔴 Not yet trained — weights placeholder |
+| **Primary Dataset** | Refined Deep-SAR Oil Spill (`bakhtiyar2222/deep-sar-oil-spill-segmentation-refined`) |
+| **Status** | 🟡 Ready for Kaggle GPU execution via `notebooks/oil_spill_segformer_training.ipynb` |
 
 ---
 
@@ -37,7 +38,7 @@ Input (512×512×3)
         ├── Stage 3 →  32×32×320
         └── Stage 4 →  16×16×512
   └── All-MLP Decoder (embed_dim=768)
-  └── Segmentation head → 512×512×5
+  └── Segmentation head → 512×512×2 (Binary: Background vs Oil Spill)
 ```
 
 ---
@@ -46,38 +47,36 @@ Input (512×512×3)
 
 | ID | Name | Description |
 |---|---|---|
-| 0 | Clean Sea | Open ocean, background |
-| 1 | Oil Spill | Confirmed oil contamination |
-| 2 | Look-Alike | Dark patch that resembles oil (bio-film, low-wind area, etc.) |
-| 3 | Ship | Vessel returns in SAR |
-| 4 | Land | Land pixels (masked during evaluation) |
+| 0 | Background / Sea | Ambient ocean, clean water, low wind look-alike boundary |
+| 1 | Oil Spill | Verified pixel-level marine oil spill / emulsion |
 
 ---
 
-## Training Configuration (planned)
+## Training Configuration (Kaggle GPU T4 x2)
 
 | Hyperparameter | Value |
 |---|---|
-| Optimizer | AdamW |
+| Optimizer | AdamW (`betas=(0.9, 0.999)`) |
 | Learning rate | 6 × 10⁻⁵ |
-| LR schedule | Polynomial decay |
-| Batch size | 8 (4 GPU × 2) |
-| Epochs | 80 |
-| Loss | CrossEntropy + Dice (weighted) |
-| Class weights | Inverse frequency (oil spill heavily upweighted) |
-| Augmentation | Random flip, rotation, brightness/contrast, elastic distortion |
+| LR schedule | Cosine Annealing with Warmup |
+| Batch size | 8 (with gradient accumulation = 2, effective batch size = 16) |
+| Epochs | 25 |
+| Loss | Weighted CrossEntropy (0.5) + Soft Dice Loss (0.5) |
+| Class weights | `[1.0, 5.0]` (compensates for oil slick pixel sparsity) |
+| Augmentation | Horizontal/Vertical flip, RandomRotate90, ShiftScaleRotate, RandomBrightnessContrast |
 | Input size | 512 × 512 |
-| Mixed precision | FP16 (torch.cuda.amp) |
+| Mixed precision | FP16 (`torch.cuda.amp.autocast`) |
+| Checkpoint dir | `/kaggle/working/oceantrace_artifacts/` |
 
 ---
 
 ## Datasets Used
 
-| Dataset | Split | Purpose |
-|---|---|---|
-| M4D Oil Spill | Train / Val / Test | Primary segmentation training |
-| GlobalOSD-SAR | Train | Classification auxiliary loss |
-| Sentinel-1 | Inference | Real-world evaluation |
+| Dataset | Split | Samples | Purpose |
+|---|---|---|---|
+| Refined Deep-SAR (SOS) | Train / Val | 6,455 / 1,615 | Primary binary segmentation training |
+| M4D Oil Spill | Supplementary | ~1,200 | Multi-class benchmark & evaluation |
+| Sentinel-1 GRD | Operational | Live EO | Real-world satellite surveillance |
 
 ---
 

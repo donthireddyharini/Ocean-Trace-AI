@@ -19,6 +19,7 @@ from ml.preprocessing.image_utils import (
     normalize_image,
     resize_with_padding,
     decode_m4d_mask,
+    decode_binary_mask,
     compute_class_distribution,
     augment_pair,
     split_dataset_by_scene,
@@ -163,6 +164,52 @@ class TestDecodeM4DMask(unittest.TestCase):
         decoded = decode_m4d_mask(mask)
         for c in range(5):
             self.assertIn(c, decoded)
+
+
+# ---------------------------------------------------------------------------
+# decode_binary_mask
+# ---------------------------------------------------------------------------
+
+
+class TestDecodeBinaryMask(unittest.TestCase):
+
+    def test_255_scale_binary_mask(self):
+        mask = np.array([[0, 255], [255, 0]], dtype=np.uint8)
+        decoded = decode_binary_mask(mask)
+        expected = np.array([[0, 1], [1, 0]], dtype=np.int64)
+        np.testing.assert_array_equal(decoded, expected)
+
+    def test_1_scale_binary_mask(self):
+        mask = np.array([[0, 1], [1, 0]], dtype=np.uint8)
+        decoded = decode_binary_mask(mask)
+        expected = np.array([[0, 1], [1, 0]], dtype=np.int64)
+        np.testing.assert_array_equal(decoded, expected)
+
+    def test_anti_aliased_edge_filtering(self):
+        # 10 is low background noise/edge bleed -> 0; 240 is oil core -> 1
+        mask = np.array([[0, 10], [240, 255]], dtype=np.uint8)
+        decoded = decode_binary_mask(mask)
+        expected = np.array([[0, 0], [1, 1]], dtype=np.int64)
+        np.testing.assert_array_equal(decoded, expected)
+
+    def test_empty_mask(self):
+        mask = np.zeros((32, 32), dtype=np.uint8)
+        decoded = decode_binary_mask(mask)
+        self.assertEqual(decoded.sum(), 0)
+        self.assertEqual(decoded.shape, (32, 32))
+
+    def test_multichannel_mask(self):
+        mask = np.zeros((16, 16, 3), dtype=np.uint8)
+        mask[4:8, 4:8, :] = 255
+        decoded = decode_binary_mask(mask)
+        self.assertEqual(decoded.shape, (16, 16))
+        self.assertEqual(decoded[5, 5], 1)
+        self.assertEqual(decoded[0, 0], 0)
+
+    def test_output_dtype_int64(self):
+        mask = np.array([[0, 255]], dtype=np.uint8)
+        decoded = decode_binary_mask(mask)
+        self.assertEqual(decoded.dtype, np.int64)
 
 
 # ---------------------------------------------------------------------------

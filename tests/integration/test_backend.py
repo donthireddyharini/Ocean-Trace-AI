@@ -114,3 +114,52 @@ def test_ais_analyze_vectorised():
     assert len(data["vessels"]) == 2
     assert data["vessels"][0]["total"] >= data["vessels"][1]["total"]
     assert data["compute_ms"] >= 0
+
+
+def test_model_status_endpoint():
+    response = client.get("/api/model/status")
+    assert response.status_code == 200
+    data = response.json()
+    assert "model_name" in data
+    assert "checkpoint_loaded" in data
+    assert "model_status" in data
+    assert data["num_classes"] == 2
+    assert "classes" in data
+    # Check alias endpoint
+    alias_resp = client.get("/api/spill/model-status")
+    assert alias_resp.status_code == 200
+    assert alias_resp.json() == data
+
+
+def test_segformer_detect_synthetic_sar():
+    import io
+    from PIL import Image
+    # Create synthetic SAR grayscale image in memory
+    img = Image.new("L", (128, 128), color=80)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+
+    response = client.post(
+        "/api/spill/segformer-detect",
+        files={"file": ("test_sar.png", buf.getvalue(), "image/png")},
+        data={"modality": "SAR"}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "confidence" in data
+    assert "area_km2" in data
+    assert "classes" in data
+    assert len(data["classes"]) == 2
+    assert data["classes"][0]["name"] == "Oil Spill"
+    assert data["classes"][1]["name"] == "Background / Clean Sea"
+    assert data["modality"] == "SAR"
+
+
+def test_segformer_detect_invalid_image():
+    response = client.post(
+        "/api/spill/segformer-detect",
+        files={"file": ("corrupt.png", b"NOT_A_VALID_IMAGE_BYTES", "image/png")}
+    )
+    # Upload validator should reject corrupted image with 400
+    assert response.status_code == 400

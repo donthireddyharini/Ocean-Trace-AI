@@ -248,6 +248,47 @@ def decode_m4d_mask(mask_arr: np.ndarray) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
+# decode_binary_mask
+# ---------------------------------------------------------------------------
+def decode_binary_mask(mask_arr: np.ndarray, threshold: Optional[int] = None) -> np.ndarray:
+    """
+    Map binary mask pixel values to binary class integers:
+      0 = Background / Sea
+      1 = Oil Spill
+
+    Resolves encoding inconsistencies between 0-255 masks (standard 8-bit PNGs)
+    and 0-1 masks, filtering out anti-aliasing edge artifacts.
+
+    Parameters
+    ----------
+    mask_arr : np.ndarray
+        Raw mask array (H, W) or (H, W, C).
+    threshold : int, optional
+        Explicit threshold. If None, dynamically uses mask_max / 2 for [0, 255]
+        masks or 0.5 for [0, 1] masks.
+
+    Returns
+    -------
+    np.ndarray int64 of shape (H, W) with values strictly in {0, 1}.
+    """
+    if mask_arr.ndim == 3:
+        mask_arr = mask_arr[:, :, 0]
+    
+    mask_max = float(mask_arr.max()) if mask_arr.size > 0 else 0.0
+    if mask_max == 0.0:
+        return np.zeros(mask_arr.shape, dtype=np.int64)
+
+    if mask_max > 1.0:
+        thresh = threshold if threshold is not None else (mask_max / 2.0)
+        binary_mask = (mask_arr >= thresh).astype(np.int64)
+    else:
+        thresh = 0.5 if threshold is None else (threshold / 255.0)
+        binary_mask = (mask_arr >= thresh).astype(np.int64)
+        
+    return binary_mask
+
+
+# ---------------------------------------------------------------------------
 # split_dataset_by_scene
 # ---------------------------------------------------------------------------
 def split_dataset_by_scene(

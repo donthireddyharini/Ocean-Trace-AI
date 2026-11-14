@@ -1,67 +1,55 @@
 # OceanTrace AI — Deep Learning Model Training Guide
 **Model:** SegFormer-B2 (`nvidia/mit-b2` backbone)  
-**Dataset:** M4D Marine Oil Spill Detection Dataset / GlobalOSD-SAR  
-**Target Hardware:** Kaggle GPU (T4 / P100) or Google Colab (T4 / A100)
+**Primary Dataset:** Refined Deep-SAR Oil Spill (SOS) (`bakhtiyar2222/deep-sar-oil-spill-segmentation-refined`)  
+**Target Hardware:** Kaggle GPU (T4 x2 / P100) or Google Colab (T4 / A100)
 
 ---
 
-## 1. Prerequisites & Datasets
+## 1. Primary Dataset & Target Classes
 
-### A. M4D Oil Spill Detection Dataset
-- **Official URL:** [https://m4d.iti.gr/oil-spill-detection-dataset/](https://m4d.iti.gr/oil-spill-detection-dataset/)
-- **License:** Free for academic and research use
-- **Format:** Paired SAR Satellite Images (.png) and 5-class Ground Truth Segmentation Masks (.png)
-- **Classes:**
-  - `0`: Clean Sea (Water surface)
-  - `1`: Oil Spill (Crude / Fuel oil slick)
-  - `2`: Look-Alike (Algae bloom, low wind calm water, internal waves)
-  - `3`: Ship (Vessel metallic scatterer)
-  - `4`: Land (Coastline & Islands)
-
-### B. GlobalOSD-SAR (Zenodo)
-- **DOI:** [10.5281/zenodo.15286918](https://doi.org/10.5281/zenodo.15286918)
-- **License:** CC BY 4.0
-- Large-scale SAR image patches for binary slick/look-alike classification generalization.
+### Refined Deep-SAR Oil Spill (SOS) Dataset
+- **Kaggle URL:** [https://www.kaggle.com/datasets/bakhtiyar2222/deep-sar-oil-spill-segmentation-refined](https://www.kaggle.com/datasets/bakhtiyar2222/deep-sar-oil-spill-segmentation-refined)
+- **Zenodo DOI:** [10.5281/zenodo.15298010](https://zenodo.org/records/15298010)
+- **Inventory:** **6,455** training samples, **1,615** validation samples (**8,070** total Sentinel-1 SAR pairs)
+- **Target Classes (Binary):**
+  - `0`: Background / Sea (open ocean water, non-spill maritime background)
+  - `1`: Oil Spill (confirmed crude/fuel oil slick & emulsion)
 
 ---
 
 ## 2. Option A: Training on Kaggle (Recommended — 30h Free GPU Weekly)
 
 1. **Log in to Kaggle**: Go to [https://www.kaggle.com](https://www.kaggle.com).
-2. **Upload Dataset**:
-   - Click **Create** -> **New Dataset**.
-   - Upload the extracted M4D dataset archive containing `images/` and `masks/` directories.
-   - Name it `m4d-oil-spill`.
-3. **Create Notebook**:
+2. **Create / Upload Notebook**:
    - Click **Create** -> **New Notebook**.
-   - Under **File**, select **Upload Notebook** and choose `notebooks/oil_spill_segformer_training.ipynb` from this repo.
+   - Under **File**, select **Upload Notebook** and choose `notebooks/oil_spill_segformer_training.ipynb` from this repository.
+3. **Attach Primary Dataset**:
+   - In the right-hand panel under **Input**, click **Add Input**.
+   - Search for `bakhtiyar2222/deep-sar-oil-spill-segmentation-refined` and attach it.
 4. **Configure GPU Accelerator**:
-   - In the right-hand panel under **Session Options** -> **Accelerator**, select **GPU T4 x2** or **GPU P100**.
-   - Turn **Internet ON**.
-5. **Attach Dataset**:
-   - Click **Add Data** on the right panel, search for your `m4d-oil-spill` dataset, and add it.
-6. **Run Training**:
-   - Run all cells (`Shift + Enter` or `Run All`).
-   - Training takes approximately 3 to 4 hours on a T4 GPU for 40 epochs.
-7. **Download Checkpoint**:
-   - Once complete, look in the output panel (`/kaggle/working/artifacts/checkpoints/`).
-   - Download `best_oilspill_segformer.pth`.
+   - Under **Session options** -> **Accelerator**, select **GPU T4 x2** (or **GPU P100**).
+   - Ensure **Internet ON** is enabled.
+5. **Run All Cells**:
+   - Click **Run All**.
+   - The notebook automatically:
+     - Discovers the dataset directory and runs integrity validation (`dataset_validation_report.json`).
+     - Trains `nvidia/mit-b2` with mixed precision (AMP) and Cosine Annealing scheduler.
+     - Saves periodic and best checkpoints (`best_oilspill_segformer.pth`).
+     - Generates metrics, training curves, confusion matrix, and sample prediction overlays.
+     - Creates the final downloadable archive: `/kaggle/working/oceantrace_artifacts.zip`.
+6. **Download Artifacts**:
+   - Download `best_oilspill_segformer.pth` or `oceantrace_artifacts.zip` from `/kaggle/working/`.
 
 ---
 
 ## 3. Option B: Training on Google Colab
 
 1. **Upload Notebook**: Go to [https://colab.research.google.com](https://colab.research.google.com) and upload `oil_spill_segformer_training.ipynb`.
-2. **Mount Google Drive**:
-   ```python
-   from google.colab import drive
-   drive.mount('/content/drive')
-   ```
+2. **Mount Google Drive** or download dataset from Kaggle via API.
 3. **Change Runtime**:
    - Click **Runtime** -> **Change runtime type** -> Select **T4 GPU**.
 4. **Run Cells**:
-   - Ensure the dataset path points to your Google Drive location.
-   - Model weights will be saved to your Google Drive.
+   - Model weights and artifacts will be saved to `./oceantrace_artifacts`.
 
 ---
 
@@ -69,18 +57,14 @@
 
 Once you download `best_oilspill_segformer.pth`:
 
-1. Copy the file into this project:
+1. Copy the file into your local repository or server:
+   - `oceantrace_artifacts/best_oilspill_segformer.pth` (or project root `best_oilspill_segformer.pth`)
+2. Start the FastAPI backend:
+   ```powershell
+   cd oceantrace-backend\backend
+   python -m uvicorn app.main:app --port 8000
    ```
-   c:\Users\donth_\Downloads\Smart-India-Hackthn-main\Smart-India-Hackthn-main\artifacts\checkpoints\best_oilspill_segformer.pth
-   ```
-2. Update the environment configuration in `oceantrace-backend/backend/.env`:
-   ```ini
-   MODEL_PATH=../../artifacts/checkpoints/best_oilspill_segformer.pth
-   USE_GPU=false  # or true if your local machine has NVIDIA CUDA
-   ```
-3. Restart the FastAPI backend:
-   ```bash
-   cd oceantrace-backend/backend
-   uvicorn app.main:app --reload --port 8000
-   ```
-4. The system will automatically switch from morphological pixel analysis to full SegFormer transformer inference!
+3. Verify model status:
+   - Query `GET http://localhost:8000/api/model/status`
+   - Response will show `checkpoint_loaded: true` and `model_status: "operational"`.
+4. Full forward-pass PyTorch inference will now execute for all uploaded satellite images on both the API and live frontend!

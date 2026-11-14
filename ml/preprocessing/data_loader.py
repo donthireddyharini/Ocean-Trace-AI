@@ -36,6 +36,7 @@ except ImportError:
 
 from ml.preprocessing.image_utils import (
     augment_pair,
+    decode_binary_mask,
     decode_m4d_mask,
     load_image,
     normalize_image,
@@ -83,6 +84,7 @@ class OilSpillDataset(Dataset):
         input_size: Tuple[int, int] = (512, 512),
         augment: bool = False,
         transform: Optional[Callable] = None,
+        is_binary: Optional[bool] = None,
     ) -> None:
         assert len(image_paths) == len(mask_paths), (
             f"Length mismatch: {len(image_paths)} images vs {len(mask_paths)} masks"
@@ -93,6 +95,7 @@ class OilSpillDataset(Dataset):
         self.input_size  = input_size
         self.augment     = augment
         self.transform   = transform
+        self.is_binary   = is_binary
 
     # ------------------------------------------------------------------
     def __len__(self) -> int:
@@ -112,7 +115,16 @@ class OilSpillDataset(Dataset):
 
         # Load mask
         msk_raw = np.array(Image.open(msk_path))
-        msk = decode_m4d_mask(msk_raw)  # int64
+        if self.is_binary is True:
+            msk = decode_binary_mask(msk_raw)
+        elif self.is_binary is False:
+            msk = decode_m4d_mask(msk_raw)
+        else:
+            # Auto-detect binary vs M4D
+            if msk_raw.max() > 4:
+                msk = decode_binary_mask(msk_raw)
+            else:
+                msk = decode_m4d_mask(msk_raw)
 
         # Resize + pad
         img = resize_with_padding(img, target=self.input_size, is_mask=False)
@@ -147,6 +159,7 @@ class OilSpillDataset(Dataset):
         transform: Optional[Callable] = None,
         image_subdir: str = "images",
         mask_subdir: str = "masks",
+        is_binary: Optional[bool] = None,
     ) -> "OilSpillDataset":
         """
         Build a dataset from a directory with 'images/' and 'masks/' subdirs.
@@ -176,6 +189,7 @@ class OilSpillDataset(Dataset):
             input_size=input_size,
             augment=augment,
             transform=transform,
+            is_binary=is_binary,
         )
 
 
@@ -195,6 +209,7 @@ def create_dataloaders(
     mask_subdir: str = "masks",
     pin_memory: bool = True,
     persistent_workers: bool = True,
+    is_binary: Optional[bool] = None,
 ) -> Tuple[DataLoader, DataLoader, DataLoader]:
     """
     Build train / val / test DataLoaders from a dataset directory.
@@ -238,15 +253,15 @@ def create_dataloaders(
 
     train_ds = OilSpillDataset(
         train_imgs, train_masks,
-        modality=modality, input_size=input_size, augment=True,
+        modality=modality, input_size=input_size, augment=True, is_binary=is_binary,
     )
     val_ds = OilSpillDataset(
         val_imgs, val_masks,
-        modality=modality, input_size=input_size, augment=False,
+        modality=modality, input_size=input_size, augment=False, is_binary=is_binary,
     )
     test_ds = OilSpillDataset(
         test_imgs, test_masks,
-        modality=modality, input_size=input_size, augment=False,
+        modality=modality, input_size=input_size, augment=False, is_binary=is_binary,
     )
 
     # Windows: num_workers > 0 requires spawn context — guard against issues

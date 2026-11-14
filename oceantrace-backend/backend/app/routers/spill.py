@@ -91,3 +91,14 @@ async def segformer_detect(
     }
     return result
 
+
+@router.get("/spill/model-status")
+@router.get("/model/status")
+def model_status():
+    """
+    Returns the operational status of the SegFormer-B2 deep learning model,
+    indicating whether the fine-tuned checkpoint is loaded or pending training.
+    """
+    detector = get_detector()
+    return detector.get_status()
+

@@ -1,11 +1,35 @@
 # OceanTrace AI — Dataset Catalog
 
 > [!IMPORTANT]
-> Some datasets require manual registration/download. See `DATA_SOURCES.md` for step-by-step download instructions.
+> The primary segmentation model is trained on the **Refined Deep-SAR Oil Spill (SOS)** dataset on Kaggle GPU. Supplementary datasets (M4D, GlobalOSD-SAR) provide additional multi-class benchmarks.
 
 ---
 
-## 1. M4D Oil Spill Detection Dataset
+## 1. Refined Deep-SAR Oil Spill (SOS) Dataset [PRIMARY]
+
+| Field | Details |
+|---|---|
+| **Source** | https://www.kaggle.com/datasets/bakhtiyar2222/deep-sar-oil-spill-segmentation-refined |
+| **License** | Open Access / Research |
+| **Format** | Sentinel-1 SAR PNG images + Binary segmentation masks |
+| **Kaggle Path** | `/kaggle/input/deep-sar-oil-spill-segmentation-refined` |
+| **Inventory** | **6,455** training samples, **1,615** validation samples (Total: 8,070 pairs) |
+
+### Classes
+| Value | Label | Description |
+|---|---|---|
+| 0 | Background / Sea | Ambient seawater, look-alikes, non-spill maritime background |
+| 1 | Oil Spill | Verified pixel-level marine oil slick |
+
+### Coverage & Characteristics
+- Sentinel-1 C-band Synthetic Aperture Radar (SAR)
+- Grayscale backscatter dampening (surface capillary wave suppression)
+- High sample volume specifically partitioned for deep neural network training
+- Binary mask format: values in {0, 1} or {0, 255} automatically thresholded
+
+---
+
+## 2. M4D Oil Spill Detection Dataset [SUPPLEMENTARY]
 
 | Field | Details |
 |---|---|

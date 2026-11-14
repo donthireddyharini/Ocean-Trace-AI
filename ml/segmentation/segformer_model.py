@@ -16,7 +16,7 @@ import logging
 import os
 from io import BytesIO
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -97,24 +97,23 @@ class SegFormerOilSpill:
         BGR colours for overlay visualisation.
     """
 
-    CLASS_NAMES = ["Clean Sea", "Oil Spill", "Look-Alike", "Ship", "Land"]
+    CLASS_NAMES = ["Background / Sea", "Oil Spill"]
     CLASS_COLORS = [
-        (15, 23, 42),    # Clean Sea  — dark navy
-        (220, 38, 38),   # Oil Spill  — red
-        (234, 179, 8),   # Look-Alike — amber
-        (2, 132, 199),   # Ship       — sky blue
-        (101, 163, 13),  # Land       — green
+        (15, 23, 42),    # Background / Sea — dark navy
+        (220, 38, 38),   # Oil Spill — red
     ]
 
     def __init__(
         self,
         checkpoint_path: Optional[Union[str, Path]] = None,
         device: Optional[str] = None,
+        class_names: Optional[List[str]] = None,
     ):
         self.checkpoint_path = checkpoint_path
         self.is_loaded: bool = False
         self.is_fine_tuned: bool = False
         self._model = None
+        self.class_names = class_names or list(self.CLASS_NAMES)
         self._device: str = (
             device
             if device
@@ -155,17 +154,28 @@ class SegFormerOilSpill:
                 "pip install torch transformers"
             )
 
-        instance = cls(checkpoint_path=checkpoint_path, device=device)
-        checkpoint = torch.load(checkpoint_path, map_location=instance._device)
+        checkpoint = torch.load(checkpoint_path, map_location=device or ("cuda" if torch.cuda.is_available() else "cpu"))
 
-        num_classes = len(cls.CLASS_NAMES)
-        model_name = checkpoint.get("config", {}).get("model_name", "nvidia/mit-b2")
+        # Determine class names and count dynamically from checkpoint
+        if "class_names" in checkpoint:
+            class_names = checkpoint["class_names"]
+        elif "config" in checkpoint and "class_names" in checkpoint["config"]:
+            class_names = checkpoint["config"]["class_names"]
+        elif "config" in checkpoint and "id2label" in checkpoint["config"]:
+            raw_id2label = checkpoint["config"]["id2label"]
+            class_names = [raw_id2label[i] if i in raw_id2label else raw_id2label[str(i)] for i in range(len(raw_id2label))]
+        else:
+            class_names = list(cls.CLASS_NAMES)
+
+        instance = cls(checkpoint_path=checkpoint_path, device=device, class_names=class_names)
+        num_classes = len(class_names)
+        model_name = checkpoint.get("config", {}).get("pretrained_model_name", checkpoint.get("config", {}).get("model_name", "nvidia/mit-b2"))
 
         model = SegformerForSemanticSegmentation.from_pretrained(
             model_name,
             num_labels=num_classes,
-            id2label={i: n for i, n in enumerate(cls.CLASS_NAMES)},
-            label2id={n: i for i, n in enumerate(cls.CLASS_NAMES)},
+            id2label={i: n for i, n in enumerate(class_names)},
+            label2id={n: i for i, n in enumerate(class_names)},
             ignore_mismatched_sizes=True,
         )
         model.load_state_dict(checkpoint["model_state_dict"])
@@ -179,7 +189,7 @@ class SegFormerOilSpill:
         if "preprocessing" in checkpoint:
             instance.preprocess_config.update(checkpoint["preprocessing"])
 
-        logger.info("SegFormer loaded from checkpoint: %s", checkpoint_path)
+        logger.info("SegFormer loaded from checkpoint: %s (classes: %s)", checkpoint_path, class_names)
         return instance
 
     @classmethod
@@ -187,6 +197,7 @@ class SegFormerOilSpill:
         cls,
         model_name: str = "nvidia/mit-b2",
         device: Optional[str] = None,
+        class_names: Optional[List[str]] = None,
     ) -> "SegFormerOilSpill":
         """
         Load only the pretrained ImageNet encoder — **no fine-tuning**.
@@ -199,6 +210,7 @@ class SegFormerOilSpill:
         model_name : str
             HuggingFace model identifier (default ``nvidia/mit-b2``).
         device : str, optional
+        class_names : list[str], optional
 
         Returns
         -------
@@ -210,14 +222,15 @@ class SegFormerOilSpill:
                 "pip install torch transformers"
             )
 
-        instance = cls(device=device)
-        num_classes = len(cls.CLASS_NAMES)
+        resolved_classes = class_names or list(cls.CLASS_NAMES)
+        instance = cls(device=device, class_names=resolved_classes)
+        num_classes = len(resolved_classes)
 
         model = SegformerForSemanticSegmentation.from_pretrained(
             model_name,
             num_labels=num_classes,
-            id2label={i: n for i, n in enumerate(cls.CLASS_NAMES)},
-            label2id={n: i for i, n in enumerate(cls.CLASS_NAMES)},
+            id2label={i: n for i, n in enumerate(resolved_classes)},
+            label2id={n: i for i, n in enumerate(resolved_classes)},
             ignore_mismatched_sizes=True,
         )
         model.to(instance._device).eval()
