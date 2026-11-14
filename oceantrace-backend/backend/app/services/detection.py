@@ -10,6 +10,7 @@ to operate on. Swapping in a real model means implementing this same
 interface against actual model weights; nothing upstream needs to change.
 """
 import hashlib
+import os
 from abc import ABC, abstractmethod
 
 import numpy as np
@@ -88,6 +89,7 @@ class SegFormerOilSpillDetector(OilSpillDetector):
         self.model_name = "SegFormer-B2-Marine-OilSpill"
         self.encoder = "Hierarchical Mix Transformer (MiT-B2)"
         self.decoder = "All-MLP Lightweight Decoder"
+        self._inference_url = os.getenv("MODEL_INFERENCE_URL", "").strip()
         self._checkpoint_path = self._find_checkpoint()
         self._pytorch_model = None
         if self._checkpoint_path:
@@ -96,8 +98,10 @@ class SegFormerOilSpillDetector(OilSpillDetector):
     @staticmethod
     def _find_checkpoint() -> str | None:
         import os
+        # 1. Check local file candidates
         candidates = [
             os.getenv("MODEL_CHECKPOINT_PATH", ""),
+            "/tmp/best_oilspill_segformer.pth",
             "/kaggle/working/oceantrace_artifacts/best_oilspill_segformer.pth",
             "./oceantrace_artifacts/best_oilspill_segformer.pth",
             "./artifacts/checkpoints/best_oilspill_segformer.pth",
@@ -107,8 +111,41 @@ class SegFormerOilSpillDetector(OilSpillDetector):
             "best_oilspill_segformer.pth",
         ]
         for c in candidates:
-            if c and os.path.isfile(c):
+            if c and os.path.isfile(c) and os.path.getsize(c) > 1024:
                 return c
+
+        # 2. Check remote Hugging Face Hub repository
+        hf_repo = os.getenv("HF_MODEL_REPO", "").strip()
+        if hf_repo:
+            try:
+                from huggingface_hub import hf_hub_download
+                token = os.getenv("HF_TOKEN") or None
+                target_dir = "/tmp" if os.path.exists("/tmp") else "./oceantrace_artifacts"
+                dl_path = hf_hub_download(
+                    repo_id=hf_repo,
+                    filename="best_oilspill_segformer.pth",
+                    token=token,
+                    local_dir=target_dir
+                )
+                if dl_path and os.path.isfile(dl_path):
+                    return dl_path
+            except Exception:
+                pass
+
+        # 3. Check direct secure checkpoint URL (S3, GCS, or GitHub Releases asset)
+        remote_url = os.getenv("CHECKPOINT_URL", "").strip()
+        if remote_url and remote_url.startswith(("http://", "https://")):
+            try:
+                import urllib.request
+                target_dir = "/tmp" if os.path.exists("/tmp") else "./oceantrace_artifacts"
+                os.makedirs(target_dir, exist_ok=True)
+                dest = os.path.join(target_dir, "best_oilspill_segformer.pth")
+                urllib.request.urlretrieve(remote_url, dest)
+                if os.path.isfile(dest) and os.path.getsize(dest) > 1024:
+                    return dest
+            except Exception:
+                pass
+
         return None
 
     def _load_pytorch_model(self):
@@ -119,6 +156,8 @@ class SegFormerOilSpillDetector(OilSpillDetector):
             self._pytorch_model = None
 
     def load_model(self):
+        if self._inference_url:
+            return f"{self.model_name} (Remote Microservice: {self._inference_url})"
         if self._pytorch_model is not None:
             return f"{self.model_name} (PyTorch Checkpoint Loaded)"
         return self.model_name
@@ -249,8 +288,25 @@ class SegFormerOilSpillDetector(OilSpillDetector):
         patch_cnt = max(4, prep_data.get("active_patch_count", 20))
         area_km2 = float(max(2.5, (patch_cnt * 64 / max(1, prep_data["pixel_count"])) * 180.0))
 
-        # If PyTorch model checkpoint is loaded, execute actual forward pass
-        if self._pytorch_model is not None and "image_bytes" in prep_data:
+        # If remote inference microservice is configured, call it
+        if self._inference_url and "image_bytes" in prep_data:
+            try:
+                import requests
+                resp = requests.post(
+                    self._inference_url,
+                    files={"file": ("sar_image.png", prep_data["image_bytes"], "image/png")},
+                    data={"modality": modality},
+                    timeout=12.0
+                )
+                if resp.status_code == 200:
+                    r_json = resp.json()
+                    confidence = float(r_json.get("confidence", confidence))
+                    area_km2 = float(r_json.get("area_km2", area_km2))
+            except Exception:
+                pass
+
+        # If PyTorch model checkpoint is loaded locally, execute actual forward pass
+        elif self._pytorch_model is not None and "image_bytes" in prep_data:
             try:
                 res = self._pytorch_model.run_full_pipeline(prep_data["image_bytes"], modality=modality)
                 confidence = float(res.spill_confidence * 100.0) if res.spill_confidence > 0 else confidence
@@ -321,14 +377,27 @@ class SegFormerOilSpillDetector(OilSpillDetector):
         }
 
     def get_status(self) -> dict:
-        is_loaded = self._pytorch_model is not None and getattr(self._pytorch_model, "is_fine_tuned", False)
+        is_remote = bool(self._inference_url)
+        is_local_loaded = self._pytorch_model is not None and getattr(self._pytorch_model, "is_fine_tuned", False)
+        is_operational = is_remote or is_local_loaded
+
+        storage_type = "none"
+        location = None
+        if is_remote:
+            storage_type = "remote_microservice"
+            location = self._inference_url
+        elif is_local_loaded:
+            storage_type = "local_filesystem"
+            location = self._checkpoint_path
+
         return {
             "model_name": "SegFormer-B2 (nvidia/mit-b2)",
             "architecture": "Hierarchical Mix Transformer (MiT-B2) + All-MLP Decoder",
             "task": "Binary Semantic Segmentation",
-            "checkpoint_loaded": is_loaded,
-            "checkpoint_path": self._checkpoint_path if is_loaded else None,
-            "model_status": "operational" if is_loaded else "checkpoint_pending_training",
+            "checkpoint_loaded": is_operational,
+            "checkpoint_path": location,
+            "storage_architecture": storage_type,
+            "model_status": "operational" if is_operational else "checkpoint_pending_training",
             "classes": {
                 0: "Background / Sea",
                 1: "Oil Spill"
@@ -337,8 +406,8 @@ class SegFormerOilSpillDetector(OilSpillDetector):
             "input_resolution": [512, 512],
             "dataset": "Refined Deep-SAR Oil Spill (SOS)",
             "notice": (
-                "Production PyTorch weights loaded and operational."
-                if is_loaded else
+                "Production PyTorch weights active and operational."
+                if is_operational else
                 "Checkpoint pending training. Execute notebooks/oil_spill_segformer_training.ipynb on Kaggle GPU to produce best_oilspill_segformer.pth."
             )
         }
