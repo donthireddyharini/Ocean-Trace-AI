@@ -18,13 +18,17 @@ class Settings:
     SESSION_IDLE_TIMEOUT_MINUTES: int = int(os.getenv("SESSION_IDLE_TIMEOUT_MINUTES", "30"))
 
     # --- Database -------------------------------------------------------
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./oceantrace.db")
+    is_serverless = bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
+    default_db = "sqlite:////tmp/oceantrace.db" if is_serverless else "sqlite:///./oceantrace.db"
+    default_upload = "/tmp/uploads" if is_serverless else "./data/uploads"
+
+    DATABASE_URL: str = os.getenv("DATABASE_URL", default_db)
 
     # --- CORS -------------------------------------------------------------
-    CORS_ORIGINS: list = os.getenv("CORS_ORIGINS", "*").split(",")
+    CORS_ORIGINS: list = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
 
     # --- Uploads ------------------------------------------------------------
-    UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "./data/uploads")
+    UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", default_upload)
     MAX_UPLOAD_MB: int = int(os.getenv("MAX_UPLOAD_MB", "25"))
     ALLOWED_IMAGE_EXT: set = {".png", ".jpg", ".jpeg", ".tif", ".tiff"}
 
